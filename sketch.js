@@ -481,16 +481,31 @@ function mouseReleased() {
 function windowResized() {
     resizeCanvas(windowWidth, windowHeight);
     if (currentGameState === GAME_STATE.WELCOME_SCREEN || currentGameState === GAME_STATE.MAIN_MENU || currentGameState === GAME_STATE.STORE_SCREEN || currentGameState === GAME_STATE.HOW_TO_PLAY || currentGameState === GAME_STATE.SETTINGS_SCREEN) {
+        // Hide DOM elements from other screens first
         if (settingsHighScoreInput) settingsHighScoreInput.hide();
         if (settingsCreditsInput) settingsCreditsInput.hide();
+        if (settingsVolumeSlider) settingsVolumeSlider.hide();
+        // Note: emailInput and passwordInput are removed from globals, so no need to hide them here explicitly.
+        // The setup functions for each screen will manage their own DOM elements.
 
-        if (currentGameState === GAME_STATE.WELCOME_SCREEN) setupWelcomeScreen();
-
-        if (currentGameState === GAME_STATE.MAIN_MENU) setupMainMenu();
-        if (currentGameState === GAME_STATE.STORE_SCREEN) setupStoreScreen(); // This will re-calc _storeUISetupData
-        if (currentGameState === GAME_STATE.HOW_TO_PLAY) setupHowToPlayScreen();
-        if (currentGameState === GAME_STATE.SETTINGS_SCREEN) setupSettingsScreen(); 
+        if (currentGameState === GAME_STATE.WELCOME_SCREEN) {
+            setupWelcomeScreen();
+        } else if (currentGameState === GAME_STATE.MAIN_MENU) {
+            setupMainMenu();
+        } else if (currentGameState === GAME_STATE.STORE_SCREEN) {
+            setupStoreScreen();
+        } else if (currentGameState === GAME_STATE.HOW_TO_PLAY) {
+            setupHowToPlayScreen();
+        } else if (currentGameState === GAME_STATE.SETTINGS_SCREEN) {
+            setupSettingsScreen(); // This will .show() its specific inputs/slider
+        }
+    } else {
+        // If in a game state like PLAYING, PAUSED, GAME_OVER, ensure all menu/settings UI inputs are hidden
+        if (settingsHighScoreInput) settingsHighScoreInput.hide();
+        if (settingsCreditsInput) settingsCreditsInput.hide();
+        if (settingsVolumeSlider) settingsVolumeSlider.hide();
     }
+
     if (player && (currentGameState === GAME_STATE.PLAYING || currentGameState === GAME_STATE.PAUSED)) {
         player.pos.x = constrain(player.pos.x, player.radius, width - player.radius);
         player.pos.y = constrain(player.pos.y, player.radius, height - player.radius);

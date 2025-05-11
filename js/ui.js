@@ -1,32 +1,28 @@
 // --- Welcome Screen ---
 function setupWelcomeScreen() {
     welcomeScreenButtons = [];
+    // Ensure any previous DOM elements from other screens are removed or hidden
+    if (typeof emailInput !== 'undefined' && emailInput) emailInput.remove();
+    if (typeof passwordInput !== 'undefined' && passwordInput) passwordInput.remove();
+    if (typeof settingsHighScoreInput !== 'undefined' && settingsHighScoreInput) settingsHighScoreInput.hide();
+    if (typeof settingsCreditsInput !== 'undefined' && settingsCreditsInput) settingsCreditsInput.hide();
+    if (typeof settingsVolumeSlider !== 'undefined' && settingsVolumeSlider) settingsVolumeSlider.hide();
+
+
     let btnW = 250;
     let btnH = 60;
-    let spacing = 20;
-    let startY = height * 0.45;
+    let spacing = 20; // Keep spacing consistent if only one button now
+    let startY = height * 0.5 - btnH / 2; // Center the single button
 
-    // TODO: Add actual login/signup functionality later
     welcomeScreenButtons.push({
         x: width / 2 - btnW / 2, y: startY,
         w: btnW, h: btnH,
-        text: "Play as Guest",
+        text: "Play Game", // Changed from "Play as Guest" to be more direct
         action: () => {
             currentGameState = GAME_STATE.MAIN_MENU;
             setupMainMenu();
             playMusic(menuMusic);
         }
-    });
-
-    welcomeScreenButtons.push({
-        x: width / 2 - btnW / 2, y: startY + (btnH + spacing),
-        w: btnW, h: btnH,
-        text: "Login / Sign Up (Coming Soon)",
-        action: () => {
-            // Placeholder for now
-            console.log("Login/Sign Up clicked");
-        },
-        disabled: true // Disabled until functionality is implemented
     });
 }
 
@@ -70,6 +66,9 @@ function drawWelcomeScreen() {
 // --- Settings Screen ---
 function setupSettingsScreen() {
     settingsButtons = [];
+    // Ensure welcome screen specific inputs are hidden if they were somehow created
+    if (typeof emailInput !== 'undefined' && emailInput) emailInput.hide();
+    if (typeof passwordInput !== 'undefined' && passwordInput) passwordInput.hide();
     if (settingsHighScoreInput) settingsHighScoreInput.remove();
     if (settingsCreditsInput) settingsCreditsInput.remove();
     if (settingsVolumeSlider) settingsVolumeSlider.remove();
@@ -361,6 +360,9 @@ function drawSettingsScreen() {
 
 function setupMainMenu() {
     menuButtons = [];
+    // Ensure welcome screen specific inputs are hidden
+    if (typeof emailInput !== 'undefined' && emailInput) emailInput.hide();
+    if (typeof passwordInput !== 'undefined' && passwordInput) passwordInput.hide();
     let btnW = 250;
     let btnH = 60;
     let spacing = 20;
@@ -440,6 +442,9 @@ let howToPlayButtons = [];
 
 function setupHowToPlayScreen() {
     howToPlayButtons = [];
+    // Ensure welcome screen specific inputs are hidden
+    if (typeof emailInput !== 'undefined' && emailInput) emailInput.hide();
+    if (typeof passwordInput !== 'undefined' && passwordInput) passwordInput.hide();
     howToPlayButtons.push({
         x: width / 2 - 100, y: height - 80, 
         w: 200, h: 50,
@@ -539,8 +544,11 @@ const _storeUISetupData = {
 };
 
 function setupStoreScreen() {
-    storeButtons = []; 
-    storeScrollY = 0; 
+    storeButtons = [];
+    // Ensure welcome screen specific inputs are hidden
+    if (typeof emailInput !== 'undefined' && emailInput) emailInput.hide();
+    if (typeof passwordInput !== 'undefined' && passwordInput) passwordInput.hide();
+    storeScrollY = 0;
 
     const itemEntryHeight = 75; 
     const buttonWidth = 130;
@@ -790,7 +798,10 @@ function drawGameOverScreen() {
 }
 
 function setupPauseMenu() {
-    pauseMenuButtons = []; 
+    pauseMenuButtons = [];
+    // Ensure welcome screen specific inputs are hidden
+    if (typeof emailInput !== 'undefined' && emailInput) emailInput.hide();
+    if (typeof passwordInput !== 'undefined' && passwordInput) passwordInput.hide();
     const btnW = 220;
     const btnH = 50;
     const spacing = 25; 
