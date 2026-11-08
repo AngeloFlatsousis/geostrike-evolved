@@ -1,107 +1,251 @@
+// --- Storage helpers (private mode / blocked storage safe) -----------------
+function storageGet(key) {
+    try {
+        return localStorage.getItem(key);
+    } catch (err) {
+        return null;
+    }
+}
+
+function storageSet(key, value) {
+    try {
+        localStorage.setItem(key, value);
+    } catch (err) {
+        // Storage can be unavailable (private mode, quota). Never break the game.
+    }
+}
+
+// --- Floating score / pickup labels ---------------------------------------
+function showFloatingLabel(x, y, text, labelColor) {
+    if (floatingLabels.length > 40) floatingLabels.shift();
+    floatingLabels.push({
+        x, y, text,
+        color: labelColor || color(255),
+        life: 900,
+        maxLife: 900,
+    });
+}
+
+function updateFloatingLabels() {
+    for (let i = floatingLabels.length - 1; i >= 0; i--) {
+        const l = floatingLabels[i];
+        l.life -= deltaTime;
+        l.y -= 0.6 * dtScale;
+        if (l.life <= 0) floatingLabels.splice(i, 1);
+    }
+}
+
+function drawFloatingLabels() {
+    if (floatingLabels.length === 0) return;
+    push();
+    textAlign(CENTER, CENTER);
+    textSize(14);
+    noStroke();
+    for (const l of floatingLabels) {
+        const a = map(l.life, 0, l.maxLife, 0, 255, true);
+        fill(red(l.color), green(l.color), blue(l.color), a);
+        text(l.text, l.x, l.y);
+    }
+    pop();
+}
+
+// --- Effects ---------------------------------------------------------------
 function createExplosion(x, y, count, pColor, sizeMultiplier = 1) {
-    for (let i = 0; i < count; i++) {
+    // Hard cap: a chain reaction of bombs should never tank the frame rate.
+    const room = GAME_SETTINGS.MAX_PARTICLES - particles.length;
+    const toCreate = min(count, max(0, room));
+    for (let i = 0; i < toCreate; i++) {
         particles.push(new Particle(x, y, pColor, sizeMultiplier));
     }
 }
 
+// --- Difficulty / spawning ------------------------------------------------
+function getRunElapsedMs() {
+    return runActive ? max(0, millis() - runStartTime) : 0;
+}
+
+function getDifficultyMultiplier() {
+    const minutes = getRunElapsedMs() / 60000;
+    return constrain(1 + minutes * GAME_SETTINGS.DIFFICULTY_RAMP_PER_MINUTE, 1, GAME_SETTINGS.MAX_DIFFICULTY_MULTIPLIER);
+}
+
+function getCurrentSpawnInterval() {
+    const seconds = getRunElapsedMs() / 1000;
+    return max(GAME_SETTINGS.MIN_SPAWN_INTERVAL, spawnInterval - seconds * 3.0);
+}
+
+function getCurrentAsteroidSpawnInterval() {
+    const minutes = getRunElapsedMs() / 60000;
+    return max(ASTEROID_SETTINGS.MIN_SPAWN_INTERVAL, ASTEROID_SETTINGS.SPAWN_INTERVAL - minutes * 1800);
+}
+
+// Enemies get tougher and more valuable the longer a run lasts.
+function scaleSpawnedEnemy(enemy) {
+    if (!enemy) return enemy;
+    const d = getDifficultyMultiplier();
+    const healthScale = 1 + (d - 1) * 0.95;
+    enemy.health = max(1, ceil(enemy.health * healthScale));
+    enemy.baseHealth = enemy.health;
+    enemy.maxSpeed = min(7, enemy.maxSpeed * (1 + (d - 1) * 0.22));
+    enemy.scoreValue = floor(enemy.scoreValue * d);
+    enemy.creditsValue = max(1, floor(enemy.creditsValue * (1 + (d - 1) * 0.5)));
+    return enemy;
+}
+
+function randomEdgeSpawnPoint(padding) {
+    switch (floor(random(4))) {
+        case 0: return { x: random(width), y: -padding };
+        case 1: return { x: width + padding, y: random(height) };
+        case 2: return { x: random(width), y: height + padding };
+        default: return { x: -padding, y: random(height) };
+    }
+}
+
 function spawnEnemy() {
-    if (enemies.length >= GAME_SETTINGS.MAX_ENEMIES + (bossSpawnedThisGame ? 1 : 0)) return;
+    if (enemies.length >= GAME_SETTINGS.MAX_ENEMIES) return;
 
-    let edge = floor(random(4));
-    let x, y;
-    let padding = 50;
+    const point = randomEdgeSpawnPoint(50);
+    const elapsed = getRunElapsedMs();
+    const roll = random();
 
-    switch (edge) {
-        case 0: x = random(width); y = -padding; break;
-        case 1: x = width + padding; y = random(height); break;
-        case 2: x = random(width); y = height + padding; break;
-        case 3: x = -padding; y = random(height); break;
-    }
-
-    let enemyTypeRoll = random();
-    if (enemyTypeRoll < 0.55) {
-        enemies.push(new ChaserEnemy(x, y));
-    } else if (enemyTypeRoll < 0.85) {
-        enemies.push(new DodgerEnemy(x, y));
+    let type;
+    if (elapsed < 20000) {
+        // Warm-up: mostly chasers.
+        type = roll < 0.85 ? ENEMY_TYPE.CHASER : ENEMY_TYPE.DODGER;
+    } else if (elapsed < 50000) {
+        type = roll < 0.6 ? ENEMY_TYPE.CHASER : (roll < 0.9 ? ENEMY_TYPE.DODGER : ENEMY_TYPE.SPLITTER);
     } else {
-        enemies.push(new SplitterEnemy(x, y));
+        type = roll < 0.45 ? ENEMY_TYPE.CHASER : (roll < 0.8 ? ENEMY_TYPE.DODGER : ENEMY_TYPE.SPLITTER);
     }
+
+    let enemy;
+    if (type === ENEMY_TYPE.CHASER) {
+        enemy = new ChaserEnemy(point.x, point.y);
+    } else if (type === ENEMY_TYPE.DODGER) {
+        enemy = new DodgerEnemy(point.x, point.y);
+    } else {
+        enemy = new SplitterEnemy(point.x, point.y);
+    }
+    enemies.push(scaleSpawnedEnemy(enemy));
+}
+
+function spawnMinion(x, y, type = ENEMY_TYPE.CHASER) {
+    let enemy;
+    if (type === ENEMY_TYPE.DODGER) {
+        enemy = new DodgerEnemy(x, y);
+    } else {
+        enemy = new ChaserEnemy(x, y);
+    }
+    enemies.push(scaleSpawnedEnemy(enemy));
+    createExplosion(x, y, 12, color(255, 90, 90, 180), 0.9);
+    return enemy;
 }
 
 function spawnAsteroid() {
     if (asteroids.length >= ASTEROID_SETTINGS.MAX_COUNT) return;
 
-    let edge = floor(random(4));
-    let x,y;
-    let padding = ASTEROID_SETTINGS.MAX_RADIUS;
+    let point = { x: 0, y: 0 };
+    let attempts = 0;
+    do {
+        point = randomEdgeSpawnPoint(ASTEROID_SETTINGS.MAX_RADIUS);
+        attempts++;
+    } while (
+        player && attempts < 8 &&
+        dist(point.x, point.y, player.pos.x, player.pos.y) < ASTEROID_SETTINGS.SAFE_SPAWN_DISTANCE
+    );
 
-    switch(edge){
-        case 0: x = random(width); y = -padding; break;
-        case 1: x = width + padding; y = random(height); break;
-        case 2: x = random(width); y = height + padding; break;
-        case 3: x = -padding; y = random(height); break;
-    }
-    asteroids.push(new Asteroid(x,y));
+    asteroids.push(new Asteroid(point.x, point.y));
     lastAsteroidSpawnTime = millis();
 }
 
 function spawnBoss() {
-    if (bossSpawnedThisGame || enemies.find(e => e.isBoss)) return;
-    enemies.push(new BossMegaChaser(width/2, -100));
+    if (bossSpawnedThisGame || enemies.some(e => e && e.isBoss && !e.dead)) return;
+    let boss = new BossMegaChaser(width / 2, -120);
+    enemies.push(boss);
     bossSpawnedThisGame = true;
+    lastBossTime = millis();
+    bossWarningStart = 0;
+    screenShakeMagnitude = max(screenShakeMagnitude, 8);
     playMusic(bossMusic);
+    return boss;
+}
+
+function updateBossProgression() {
+    if (bossSpawnedThisGame || enemies.some(e => e && e.isBoss && !e.dead)) {
+        bossWarningStart = 0;
+        return;
+    }
+
+    if (bossWarningStart > 0) {
+        if (millis() - bossWarningStart >= GAME_SETTINGS.BOSS_WARNING_DURATION) {
+            bossWarningStart = 0;
+            spawnBoss();
+        }
+        return;
+    }
+
+    // Score gets the boss to the door; a cooldown keeps late-game score rates
+    // from turning the run into a boss conveyor belt.
+    if (score >= nextBossScore && millis() - lastBossTime >= GAME_SETTINGS.BOSS_MIN_INTERVAL) {
+        bossWarningStart = millis();
+        playSfx('bossWarning');
+    }
 }
 
 function spawnPickup(x, y, type) {
+    if (pickups.length >= GAME_SETTINGS.MAX_PICKUPS) return;
     pickups.push(new Pickup(x, y, type));
 }
 
+// --- Enemy merging ---------------------------------------------------------
 function handleEnemyMerging() {
     let newMergedEnemies = [];
     let indicesToRemove = new Set();
 
     for (let i = 0; i < enemies.length; i++) {
-        if (indicesToRemove.has(i) || (enemies[i] && enemies[i].isBoss)) continue;
+        const e1 = enemies[i];
+        if (!e1 || e1.dead || indicesToRemove.has(i) || e1.isBoss) continue;
 
         for (let j = i + 1; j < enemies.length; j++) {
-            if (indicesToRemove.has(j) || (enemies[j] && enemies[j].isBoss)) continue;
+            const e2 = enemies[j];
+            if (!e2 || e2.dead || indicesToRemove.has(j) || e2.isBoss) continue;
 
-            let e1 = enemies[i];
-            let e2 = enemies[j];
+            if (e1.type !== e2.type || e1.constructor !== e2.constructor) continue;
+            if (e1.mergeLevel >= ENEMY_MERGE_SETTINGS.MAX_MERGE_LEVEL) continue;
+            if (e2.mergeLevel >= ENEMY_MERGE_SETTINGS.MAX_MERGE_LEVEL) continue;
 
-            if (!e1 || !e2) continue;
+            const d = dist(e1.pos.x, e1.pos.y, e2.pos.x, e2.pos.y);
+            if (d < e1.radius + e2.radius - 5) {
+                const merged = createMergedEnemy(e1, e2);
+                if (!merged) continue;
 
-            if (e1.type === e2.type &&
-                e1.constructor === e2.constructor &&
-                e1.mergeLevel < ENEMY_MERGE_SETTINGS.MAX_MERGE_LEVEL &&
-                e2.mergeLevel < ENEMY_MERGE_SETTINGS.MAX_MERGE_LEVEL) {
-
-                let d = dist(e1.pos.x, e1.pos.y, e2.pos.x, e2.pos.y);
-                if (d < e1.radius + e2.radius - 5) {
-                    let merged = createMergedEnemy(e1, e2);
-                    if (merged) {
-                        newMergedEnemies.push(merged);
-                        indicesToRemove.add(i);
-                        indicesToRemove.add(j);
-                        createExplosion(
-                            (e1.pos.x + e2.pos.x) / 2, (e1.pos.y + e2.pos.y) / 2,
-                            30 + (e1.mergeLevel + e2.mergeLevel) * 10,
-                            ENEMY_MERGE_SETTINGS.MERGE_EFFECT_COLOR,
-                            1.2 + (e1.mergeLevel + e2.mergeLevel) * 0.2
-                        );
-                        break;
-                    }
-                }
+                newMergedEnemies.push(merged);
+                indicesToRemove.add(i);
+                indicesToRemove.add(j);
+                createExplosion(
+                    (e1.pos.x + e2.pos.x) / 2, (e1.pos.y + e2.pos.y) / 2,
+                    20 + (e1.mergeLevel + e2.mergeLevel) * 8,
+                    ENEMY_MERGE_SETTINGS.MERGE_EFFECT_COLOR,
+                    1.1 + (e1.mergeLevel + e2.mergeLevel) * 0.2
+                );
+                playSfx('merge');
+                break;
             }
         }
     }
 
     if (indicesToRemove.size > 0) {
-        let sortedIndices = Array.from(indicesToRemove).sort((a, b) => b - a);
-        for (let index of sortedIndices) {
-            enemies.splice(index, 1);
+        // Remove by identity: splicing by index invalidates later indices.
+        const toRemove = new Set();
+        for (const index of indicesToRemove) {
+            if (enemies[index]) toRemove.add(enemies[index]);
         }
-        enemies.push(...newMergedEnemies);
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            if (toRemove.has(enemies[i])) enemies.splice(i, 1);
+        }
+        for (const merged of newMergedEnemies) {
+            if (enemies.length < GAME_SETTINGS.MAX_ENEMIES) enemies.push(merged);
+        }
     }
 }
 
@@ -116,12 +260,11 @@ function createMergedEnemy(e1, e2) {
         health: floor((e1.health + e2.health) * ENEMY_MERGE_SETTINGS.MERGE_HEALTH_BONUS_FACTOR + newMergeLevel * 5),
         baseHealth: floor((e1.baseHealth + e2.baseHealth) * ENEMY_MERGE_SETTINGS.MERGE_BASE_HEALTH_BONUS_FACTOR + newMergeLevel * 5),
         scoreValue: e1.scoreValue + e2.scoreValue + ENEMY_MERGE_SETTINGS.MERGE_SCORE_BONUS_BASE * newMergeLevel,
-        // xpValue: e1.xpValue + e2.xpValue + ENEMY_MERGE_SETTINGS.MERGE_XP_BONUS_BASE * newMergeLevel, // Phased out
         creditsValue: (e1.creditsValue || 0) + (e2.creditsValue || 0) + ENEMY_MERGE_SETTINGS.MERGE_CREDITS_BONUS_BASE * newMergeLevel,
         type: e1.type,
         mergeLevel: newMergeLevel,
         pickupDropChance: min(0.8, e1.pickupDropChance + e2.pickupDropChance + ENEMY_MERGE_SETTINGS.PICKUP_DROP_CHANCE_BONUS * newMergeLevel),
-        baseColor: lerpColor(e1.baseColor, e2.baseColor, 0.5)
+        baseColor: lerpColor(e1.baseColor, e2.baseColor, 0.5),
     };
 
     let darknessFactor = 1.0 - (mergedData.mergeLevel * 0.12);
@@ -148,7 +291,7 @@ function createMergedEnemy(e1, e2) {
     return null;
 }
 
-
+// --- Background / camera ---------------------------------------------------
 function drawGrid() {
     stroke(255, 255, 255, 10 + backgroundPulseAlpha);
     strokeWeight(1);
@@ -160,16 +303,63 @@ function drawGrid() {
     }
 }
 
-function applyScreenShake() {
-    if (screenShakeEnabled && screenShakeMagnitude > 0) {
-        let shakeX = random(-screenShakeMagnitude, screenShakeMagnitude);
-        let shakeY = random(-screenShakeMagnitude, screenShakeMagnitude);
-        translate(shakeX, shakeY);
-        screenShakeMagnitude *= 0.9;
-        if (screenShakeMagnitude < 0.5) screenShakeMagnitude = 0;
+function initStars() {
+    stars = [];
+    const count = constrain(floor((width * height) / 9000), 50, 220);
+    for (let i = 0; i < count; i++) {
+        stars.push({
+            x: random(width),
+            y: random(height),
+            z: random(0.25, 1),
+            twinkle: random(TWO_PI),
+        });
     }
 }
 
+function drawStarfield() {
+    push();
+    noStroke();
+    for (const s of stars) {
+        s.y += (0.05 + s.z * 0.14) * dtScale;
+        if (s.y > height + 2) {
+            s.y = -2;
+            s.x = random(width);
+        }
+        const alpha = 25 + 95 * s.z * (0.65 + 0.35 * sin(frameCount * 0.02 + s.twinkle));
+        fill(170, 200, 255, alpha);
+        ellipse(s.x, s.y, 1 + s.z * 1.7);
+    }
+    pop();
+}
+
+function updateScreenShake() {
+    if (screenShakeMagnitude <= 0) {
+        screenShakeMagnitude = 0;
+        return;
+    }
+    screenShakeMagnitude *= pow(0.9, dtScale);
+    if (screenShakeMagnitude < 0.4) screenShakeMagnitude = 0;
+}
+
+// One random offset per frame, shared by the background and the world so the
+// two never jitter against each other.
+function computeCameraShake(intensity = 1) {
+    if (!screenShakeEnabled || screenShakeMagnitude <= 0) {
+        cameraShake.x = 0;
+        cameraShake.y = 0;
+        return;
+    }
+    const m = screenShakeMagnitude * intensity;
+    cameraShake.x = random(-m, m);
+    cameraShake.y = random(-m, m);
+}
+
+function applyCameraShake() {
+    if (cameraShake.x === 0 && cameraShake.y === 0) return;
+    translate(cameraShake.x, cameraShake.y);
+}
+
+// --- Score multiplier ------------------------------------------------------
 function updateMultiplier() {
     killsSinceLastHit++;
     lastKillTime = millis();
@@ -192,109 +382,151 @@ function checkMultiplierReset() {
     }
 }
 
-function loadGameData() { // Renamed from loadHighScore
-    let storedScore = localStorage.getItem('geoShooterEvolvedHighScore');
-    highScore = storedScore ? int(storedScore) : 0;
-
-    let storedCredits = localStorage.getItem('geoShooterEvolvedCredits');
-    playerCredits = storedCredits ? int(storedCredits) : GAME_SETTINGS.INITIAL_CREDITS;
-
-    // Load upgrade levels from localStorage
-    for (let key in availableUpgrades) {
-        let storedLevel = localStorage.getItem('geoShooterUpgrade_' + key);
-        if (storedLevel !== null) {
-            availableUpgrades[key].level = int(storedLevel);
-        } else {
-            availableUpgrades[key].level = 0; // Default to 0 if not found
+// --- Queries ---------------------------------------------------------------
+function getNearestEnemy(fromPos, maxDist = Infinity) {
+    let best = null;
+    let bestDist = maxDist;
+    for (const e of enemies) {
+        if (!e || e.dead) continue;
+        const d = dist(fromPos.x, fromPos.y, e.pos.x, e.pos.y);
+        if (d < bestDist) {
+            bestDist = d;
+            best = e;
         }
     }
-    let storedDebugMode = localStorage.getItem('geoShooterEvolvedDebugMode');
-    // If it's stored as "true" (string), set to true (boolean), otherwise false.
-    debugMode = storedDebugMode === 'true';
-
-    let storedVolume = localStorage.getItem('geoShooterMasterVolume');
-    masterVolume = storedVolume !== null ? parseFloat(storedVolume) : 0.5;
-
-    let storedScreenShake = localStorage.getItem('geoShooterScreenShake');
-    // If it's stored as "false" (string), set to false (boolean), otherwise true (default).
-    screenShakeEnabled = storedScreenShake === 'false' ? false : true;
+    return best;
 }
 
-function saveGameData(isResetting = false) { // Added isResetting flag
-    if (isResetting) {
-        localStorage.setItem('geoShooterEvolvedHighScore', 0); // Directly save 0 for reset
-    } else if (score > highScore) {
-        highScore = score; // Update global highScore if current game score is higher
-        localStorage.setItem('geoShooterEvolvedHighScore', highScore);
+function clearHostilesNearPlayer(radius) {
+    if (!player) return;
+    for (const e of enemies.slice()) {
+        if (!e || e.dead) continue;
+        const d = dist(player.pos.x, player.pos.y, e.pos.x, e.pos.y);
+        if (d > radius) continue;
+        if (e.isBoss) {
+            // Bosses are knocked back instead of melted.
+            let push = p5.Vector.sub(e.pos, player.pos);
+            if (push.magSq() < 0.0001) push.set(1, 0);
+            e.pos.add(push.setMag(radius * 0.9));
+            e.vel.mult(0.2);
+        } else {
+            e.takeDamage(e.health + 1);
+        }
     }
-    // Note: If not resetting and score is not > highScore, the existing highScore in localStorage remains.
-    // This is usually fine, but ensure loadGameData always reflects the true highest.
-    // The current loadGameData correctly loads what's in localStorage.
+    for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const eb = enemyBullets[i];
+        if (!eb) continue;
+        if (dist(player.pos.x, player.pos.y, eb.pos.x, eb.pos.y) < radius) {
+            enemyBullets.splice(i, 1);
+        }
+    }
+}
 
-    localStorage.setItem('geoShooterEvolvedCredits', playerCredits);
+// --- Persistence -----------------------------------------------------------
+function loadGameData() {
+    let storedScore = parseInt(storageGet('geoShooterEvolvedHighScore'), 10);
+    highScore = isNaN(storedScore) ? 0 : storedScore;
 
-    // Save upgrade levels to localStorage
+    let storedCredits = parseInt(storageGet('geoShooterEvolvedCredits'), 10);
+    playerCredits = isNaN(storedCredits) ? GAME_SETTINGS.INITIAL_CREDITS : max(0, storedCredits);
+
+    let storedBonusLives = parseInt(storageGet('geoShooterBonusLives'), 10);
+    bonusLives = isNaN(storedBonusLives)
+        ? 0
+        : constrain(storedBonusLives, 0, PLAYER_SETTINGS.MAX_LIVES - PLAYER_SETTINGS.STARTING_LIVES);
+
+    // Load upgrade levels
     for (let key in availableUpgrades) {
-        localStorage.setItem('geoShooterUpgrade_' + key, availableUpgrades[key].level);
+        let storedLevel = parseInt(storageGet('geoShooterUpgrade_' + key), 10);
+        availableUpgrades[key].level = isNaN(storedLevel)
+            ? 0
+            : constrain(storedLevel, 0, availableUpgrades[key].maxLevel);
     }
-    localStorage.setItem('geoShooterEvolvedDebugMode', debugMode); // Save boolean as string
-    localStorage.setItem('geoShooterMasterVolume', masterVolume);
-    localStorage.setItem('geoShooterScreenShake', screenShakeEnabled); // Save boolean as string
+
+    debugMode = storageGet('geoShooterEvolvedDebugMode') === 'true';
+
+    let storedVolume = parseFloat(storageGet('geoShooterMasterVolume'));
+    masterVolume = isNaN(storedVolume) ? 0.5 : constrain(storedVolume, 0, 1);
+
+    screenShakeEnabled = storageGet('geoShooterScreenShake') !== 'false';
+    sfxEnabled = storageGet('geoShooterSfx') !== 'false';
+    updateSfxVolume();
+}
+
+function saveGameData(isResetting = false) {
+    if (isResetting) {
+        storageSet('geoShooterEvolvedHighScore', 0);
+        highScore = 0;
+    } else if (score > highScore) {
+        highScore = score;
+        storageSet('geoShooterEvolvedHighScore', highScore);
+    } else {
+        storageSet('geoShooterEvolvedHighScore', highScore);
+    }
+
+    storageSet('geoShooterEvolvedCredits', floor(playerCredits));
+    storageSet('geoShooterBonusLives', bonusLives);
+
+    for (let key in availableUpgrades) {
+        storageSet('geoShooterUpgrade_' + key, availableUpgrades[key].level);
+    }
+    storageSet('geoShooterEvolvedDebugMode', debugMode);
+    storageSet('geoShooterMasterVolume', masterVolume);
+    storageSet('geoShooterScreenShake', screenShakeEnabled);
+    storageSet('geoShooterSfx', sfxEnabled);
 }
 
 function resetGameToDefaults() {
-    console.log("Resetting game data to defaults...");
     highScore = 0;
-    playerCredits = GAME_SETTINGS.INITIAL_CREDITS; // Use constant for initial credits
+    playerCredits = GAME_SETTINGS.INITIAL_CREDITS;
+    bonusLives = 0;
 
-    // Reset upgrade levels
     if (availableUpgrades && Object.keys(availableUpgrades).length > 0) {
         for (let key in availableUpgrades) {
             availableUpgrades[key].level = 0;
         }
-    } else {
-        // If availableUpgrades isn't populated yet (e.g. called before defineUpgrades),
-        // defineUpgrades() should set them to default levels anyway.
-        // This path might occur if reset is somehow triggered very early.
-        console.warn("availableUpgrades not populated during reset. defineUpgrades() should handle defaults.");
     }
-    
-    masterVolume = 0.5; // Default volume
-    debugMode = false;  // Default debug mode
-    screenShakeEnabled = true; // Default screen shake
+    masterVolume = 0.5;
+    debugMode = false;
+    screenShakeEnabled = true;
+    sfxEnabled = true;
 
-    saveGameData(true); // Persist these new default values, indicating it's a reset
-    console.log("Game data reset and saved.");
+    saveGameData(true);
+    updateSfxVolume();
+    outputVolume(masterVolume);
 
-    // If player object exists, re-apply upgrades to reflect reset state
     if (player) {
         player.applyUpgrades();
-        player.bombs = player.maxBombs; // Reset bombs based on new capacity
+        player.bombs = player.maxBombs;
     }
 }
 
-// function addXP(amount) { // Phased out
-//     if (currentGameState !== GAME_STATE.PLAYING) return;
-//     playerXP += amount * scoreMultiplier;
-//     if (playerXP >= xpToNextLevel) {
-//         levelUp();
-//     }
-// }
+// --- Run lifecycle ---------------------------------------------------------
+function endGame() {
+    if (currentGameState === GAME_STATE.GAME_OVER) return;
 
-// function levelUp() { // Phased out
-//     playerLevel++;
-//     playerXP -= xpToNextLevel;
-//     xpToNextLevel = floor(GAME_SETTINGS.INITIAL_XP_TO_NEXT_LEVEL * pow(GAME_SETTINGS.LEVEL_COST_MULTIPLIER, playerLevel - 1));
-//     presentUpgradeChoices();
-// }
+    const elapsed = getRunElapsedMs();
+    lastRunStats = {
+        score: score,
+        kills: runKills,
+        timeMs: elapsed,
+        creditsEarned: runCreditsEarned,
+        bossKills: bossesKilled,
+        newHighScore: score > highScore,
+    };
 
-// function calculateXPPercentage() { // Phased out
-//     if (xpToNextLevel <= 0) return 1;
-//     return constrain(playerXP / xpToNextLevel, 0, 1);
-// }
-function isMobileDevice() {
-    // Basic check using user agent. More robust checks can be added if needed.
-    let check = false;
-    (function(a){if(/(android|bb\d+|meego).+mobile|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile.+firefox|netfront|opera m(ob|in)i|palm( os)?|phone|p(ixi|rim)|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino/i.test(a)||/1207|6310|6590|3gso|4thp|50[1-6]i|770s|802s|a wa|abac|ac(er|oo|s\-)|ai(ko|rn)|al(av|ca|co)|amoi|an(ex|ny|yw)|aptu|ar(ch|go)|as(te|us)|attw|au(di|\-m|r |s )|avan|be(ck|ll|nq)|bi(lb|rd)|bl(ac|az)|br(e|v)w|bumb|bw\-(n|u)|c55\/|capi|ccwa|cdm\-|cell|chtm|cldc|cmd\-|co(mp|nd)|craw|da(it|ll|ng)|dbte|dc\-s|devi|dica|dmob|do(c|p)o|ds(12|\-d)|el(49|ai)|em(l2|ul)|er(ic|k0)|esl8|ez([4-7]0|os|wa|ze)|fetc|fly(\-|_)|g1 u|g560|gene|gf\-5|g\-mo|go(\.w|od)|gr(ad|un)|haie|hcit|hd\-(m|p|t)|hei\-|hi(pt|ta)|hp( i|ip)|hs\-c|ht(c(\-| |_|a|g|p|s|t)|tp)|hu(aw|tc)|i\-(20|go|ma)|i230|iac( |\-|\/)|ibro|idea|ig01|ikom|im1k|inno|ipaq|iris|ja(t|v)a|jbro|jemu|jigs|kddi|keji|kgt( |\/)|klon|kpt |kwc\-|kyo(c|k)|le(no|xi)|lg( g|\/(k|l|u)|50|54|\-[a-w])|libw|lynx|m1\-w|m3ga|m50\/|ma(te|ui|xo)|mc(01|21|ca)|m\-cr|me(rc|ri)|mi(o8|oa|ts)|mmef|mo(01|02|bi|de|do|t(\-| |o|v)|zz)|mt(50|p1|v )|mwbp|mywa|n10[0-2]|n20[2-3]|n30(0|2)|n50(0|2|5)|n7(0(0|1)|10)|ne((c|m)\-|on|tf|wf|wg|wt)|nok(6|i)|nzph|o2im|op(ti|wv)|oran|owg1|p800|pan(a|d|t)|pdxg|pg(13|\-([1-8]|c))|phil|pire|pl(ay|uc)|pn\-2|po(ck|rt|se)|prox|psio|pt\-g|qa\-a|qc(07|12|21|32|60|\-[2-7]|i\-)|qtek|r380|r600|raks|rim9|ro(ve|zo)|s55\/|sa(ge|ma|mm|ms|ny|va)|sc(01|h\-|oo|p\-)|sdk\/|se(c(\-|0|1)|47|mc|nd|ri)|sgh\-|shar|sie(\-|m)|sk\-0|sl(45|id)|sm(al|ar|b3|it|t5)|so(ft|ny)|sp(01|h\-|v\-|v )|sy(01|mb)|t2(18|50)|t6(00|10|18)|ta(gt|lk)|tcl\-|tdg\-|tel(i|m)|tim\-|t\-mo|to(pl|sh)|ts(70|m\-|m3|m5)|tx\-9|up(\.b|g1|si)|utst|v400|v750|veri|vi(rg|te)|vk(40|5[0-3]|\-v)|vm40|voda|vulc|vx(52|53|60|61|70|80|81|83|85|98)|w3c(\-| )|webc|whit|wi(g |nc|nw)|wmlb|wonu|x700|yas\-|your|zeto|zte\-/i.test(a.substr(0,4)))check = true;})(navigator.userAgent||navigator.vendor||window.opera);
-    return check;
+    currentGameState = GAME_STATE.GAME_OVER;
+    runActive = false;
+    isShooting = false;
+    joystick.active = false;
+    saveGameData();
+    playMusic(menuMusic);
+    playSfx('gameOver');
+}
+
+function formatTime(ms) {
+    const totalSeconds = max(0, floor(ms / 1000));
+    const minutes = floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
 }

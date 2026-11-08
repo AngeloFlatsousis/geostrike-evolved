@@ -1,0 +1,10 @@
+{
+  "name": "geostrike-evolved",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Arcade survival shooter built with p5.js",
+  "scripts": {
+    "test": "node tests/headless.js",
+    "serve": "python3 -m http.server 8000"
+  }
+}

@@ -91,160 +91,63 @@ function defineUpgrades() {
     };
 }
 
-// function getAvailableUpgradeOptions() { // Phased out
-//     let options = [];
-//     // Filter for upgrades that are not maxed out
-//     let keys = Object.keys(availableUpgrades).filter(key => availableUpgrades[key].level < availableUpgrades[key].maxLevel);
-//
-//     if (keys.length === 0) return []; // No upgrades available
-//
-//     shuffle(keys, true); // p5.js shuffle function, shuffles in place
-//
-//     // Select up to 3 upgrades
-//     for (let i = 0; i < min(3, keys.length); i++) {
-//         options.push(availableUpgrades[keys[i]]);
-//     }
-//     return options;
-// }
-
-// function presentUpgradeChoices() { // Phased out
-//     currentGameState = GAME_STATE.UPGRADE_SCREEN;
-//     upgradeChoices = getAvailableUpgradeOptions(); // upgradeChoices is a global array
-//     if (upgradeChoices.length === 0) { // If no upgrades left, go back to playing
-//         currentGameState = GAME_STATE.PLAYING;
-//     }
-// }
-
-// function selectUpgrade(index) { // Phased out
-//     if (currentGameState !== GAME_STATE.UPGRADE_SCREEN || index < 0 || index >= upgradeChoices.length) return;
-//
-//     let chosenUpgradeName = upgradeChoices[index].name;
-//     // Find the actual upgrade key in availableUpgrades (since upgradeChoices stores copies/references)
-//     let actualUpgradeKey = Object.keys(availableUpgrades).find(k => availableUpgrades[k].name === chosenUpgradeName);
-//
-//     if (actualUpgradeKey && availableUpgrades[actualUpgradeKey].level < availableUpgrades[actualUpgradeKey].maxLevel) {
-//         availableUpgrades[actualUpgradeKey].level++;
-//         if (player) { // Ensure player exists
-//             player.applyUpgrades();
-//         }
-//     }
-//     currentGameState = GAME_STATE.PLAYING;
-//     upgradeChoices = []; // Clear choices
-// }
-
-// function drawUpgradeScreen() { // Phased out
-//     if (currentGameState !== GAME_STATE.UPGRADE_SCREEN || !upgradeChoices || upgradeChoices.length === 0) return;
-//
-//     push();
-//     // Semi-transparent background overlay
-//     fill(0, 0, 10, 200);
-//     rect(0, 0, width, height);
-//
-//     fill(255);
-//     textSize(48);
-//     textAlign(CENTER, CENTER);
-//     text("LEVEL UP!", width / 2, height * 0.15);
-//
-//     textSize(24);
-//     text("Choose an Upgrade:", width / 2, height * 0.25);
-//
-//     let boxWidth = width * 0.25;
-//     let boxHeight = height * 0.45;
-//     let numChoices = upgradeChoices.length;
-//     let totalChoicesWidth = numChoices * boxWidth + (numChoices - 1) * 40; // 40px spacing
-//     let startX = width / 2 - totalChoicesWidth / 2;
-//     let startY = height * 0.35;
-//
-//     for (let i = 0; i < upgradeChoices.length; i++) {
-//         let upgrade = upgradeChoices[i];
-//         let boxX = startX + i * (boxWidth + 40);
-//         let hover = mouseX > boxX && mouseX < boxX + boxWidth && mouseY > startY && mouseY < startY + boxHeight;
-//
-//         strokeWeight(3);
-//         stroke(hover ? color(255, 255, 0) : 200); // Yellow highlight on hover
-//         fill(20, 30, 50, 230); // Dark blue box
-//         rect(boxX, startY, boxWidth, boxHeight, 10); // Rounded corners
-//
-//         noStroke();
-//         fill(255); // White text
-//         textAlign(CENTER, TOP);
-//         textSize(22);
-//         text(upgrade.name, boxX + boxWidth / 2, startY + 20);
-//
-//         textSize(16);
-//         fill(200); // Lighter text for level info
-//         let nextLevelDisplay = upgrade.level + 1;
-//         if (upgrade.level >= upgrade.maxLevel -1) { // Check if this is the last possible upgrade for this type
-//              text(`Level ${upgrade.level} -> ${nextLevelDisplay} (MAX)`, boxX + boxWidth / 2, startY + 55);
-//         } else {
-//              text(`Level ${upgrade.level} -> ${nextLevelDisplay}`, boxX + boxWidth / 2, startY + 55);
-//         }
-//
-//
-//         textAlign(LEFT, TOP);
-//         fill(220); // Text for description
-//         textSize(14);
-//         text(upgrade.description, boxX + 15, startY + 90, boxWidth - 30); // Constrain text width
-//
-//         fill(180, 255, 180); // Greenish for effect change text
-//         textSize(13);
-//         let effectText = upgrade.getEffectChangeText ? upgrade.getEffectChangeText() : "Effect N/A";
-//         text(effectText, boxX + 15, startY + boxHeight - 60, boxWidth - 30);
-//
-//         if (upgrade.level >= upgrade.maxLevel -1 ) { // If it's the final upgrade
-//             fill(255, 100, 100); // Reddish text for "FINAL UPGRADE"
-//             textAlign(CENTER, TOP);
-//             textSize(16);
-//             text("FINAL UPGRADE!", boxX + boxWidth / 2, startY + boxHeight - 25);
-//         }
-//     }
-//     pop();
-// }
-
 function purchaseUpgrade(upgradeKey) {
     if (!availableUpgrades[upgradeKey]) {
         console.error("Attempted to purchase unknown upgrade:", upgradeKey);
-        return;
+        return false;
     }
 
     let upgrade = availableUpgrades[upgradeKey];
     if (upgrade.level >= upgrade.maxLevel) {
-        console.log("Upgrade already maxed out:", upgrade.name);
-        // Potentially provide UI feedback here
-        return;
+        if (typeof showStoreToast === 'function') showStoreToast(upgrade.name + ' is already maxed out', color(255, 200, 120));
+        playSfx('denied');
+        return false;
     }
 
     let cost = upgrade.getCost();
     if (playerCredits >= cost) {
         playerCredits -= cost;
         upgrade.level++;
-        console.log("Purchased upgrade:", upgrade.name, "New level:", upgrade.level);
-        // If a game is in progress, player.applyUpgrades() would be called.
-        // For store purchases, this effect applies to the next game or is immediately persistent.
-        // The current setup saves upgrade levels, so player.applyUpgrades() in initGame will handle it.
-        saveGameData(); // Save credits and new upgrade level
-        setupStoreScreen(); // Re-setup store to reflect new state (e.g., button might disappear or cost change)
-    } else {
-        console.log("Not enough credits to purchase:", upgrade.name);
-        // Potentially provide UI feedback
+        saveGameData();
+        playSfx('purchase');
+        if (typeof showStoreToast === 'function') {
+            showStoreToast(upgrade.name + ' upgraded to level ' + upgrade.level, color(140, 255, 160));
+        }
+        // Re-setup the store to refresh button states, keeping the scroll position.
+        setupStoreScreen(true);
+        if (player) player.applyUpgrades();
+        return true;
     }
+
+    playSfx('denied');
+    if (typeof showStoreToast === 'function') {
+        showStoreToast('Not enough credits (' + (cost - floor(playerCredits)) + ' short)', color(255, 120, 120));
+    }
+    return false;
 }
 
 function purchaseLife() {
-    // const lifeCost = 500; // Now using PLAYER_SETTINGS.LIFE_COST
-    if (playerLives >= PLAYER_SETTINGS.MAX_LIVES) {
-        console.log("Already at max lives.");
-        // UI feedback
-        return;
+    const maxBonusLives = PLAYER_SETTINGS.MAX_LIVES - PLAYER_SETTINGS.STARTING_LIVES;
+    if (bonusLives >= maxBonusLives) {
+        playSfx('denied');
+        if (typeof showStoreToast === 'function') showStoreToast('Already at maximum lives', color(255, 200, 120));
+        return false;
     }
-    if (playerCredits >= PLAYER_SETTINGS.LIFE_COST) {
-        playerCredits -= PLAYER_SETTINGS.LIFE_COST;
-        playerLives++; // This affects the next game via initGame or if we make lives persistent across sessions
-        console.log("Purchased life. Current lives for next game:", playerLives);
-        saveGameData(); // Save credits and potentially new playerLives if it becomes persistent
-        setupStoreScreen(); // Re-setup store to reflect new state
-    } else {
-        console.log("Not enough credits to purchase life.");
-        // UI feedback
+    if (playerCredits < PLAYER_SETTINGS.LIFE_COST) {
+        playSfx('denied');
+        if (typeof showStoreToast === 'function') {
+            showStoreToast('Not enough credits (' + (PLAYER_SETTINGS.LIFE_COST - floor(playerCredits)) + ' short)', color(255, 120, 120));
+        }
+        return false;
     }
+
+    playerCredits -= PLAYER_SETTINGS.LIFE_COST;
+    bonusLives++;
+    saveGameData();
+    playSfx('purchase');
+    if (typeof showStoreToast === 'function') {
+        showStoreToast('Extra life bought — you start runs with ' + (PLAYER_SETTINGS.STARTING_LIVES + bonusLives), color(140, 255, 160));
+    }
+    setupStoreScreen(true);
+    return true;
 }

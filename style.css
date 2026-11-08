@@ -2,20 +2,22 @@ html, body {
   margin: 0;
   padding: 0;
   overflow: hidden; /* Prevent scrollbars if canvas is slightly off */
+  background: #050a0f;
   user-select: none; /* Standard syntax */
   -webkit-user-select: none; /* Safari */
   -moz-user-select: none; /* Firefox */
-  -ms-user-select: none; /* Internet Explorer/Edge */
+  -webkit-touch-callout: none; /* No long-press menus on iOS */
+  overscroll-behavior: none; /* No pull-to-refresh mid-run */
 }
 
 canvas {
   display: block;
   outline: none; /* Remove focus outline */
   -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
-  user-select: none; /* Standard syntax */
-  -webkit-user-select: none; /* Safari */
-  -moz-user-select: none; /* Firefox */
-  -ms-user-select: none; /* Internet Explorer/Edge */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  touch-action: none; /* The game handles its own touch gestures */
 }
 
 #loading-screen {

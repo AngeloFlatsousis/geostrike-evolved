@@ -1,13 +1,12 @@
 // --- Game Configuration & Constants ---
-// DEBUG_MODE is now a global variable in globals.js
+// DEBUG_MODE is a global variable in globals.js
 
 const GAME_STATE = {
-    WELCOME_SCREEN: 'welcomeScreen', // New state for login/guest play
+    WELCOME_SCREEN: 'welcomeScreen',
     MAIN_MENU: 'mainMenu',
     PLAYING: 'playing',
     GAME_OVER: 'gameOver',
-    // UPGRADE_SCREEN: 'upgradeScreen', // Phased out
-    STORE_SCREEN: 'storeScreen', // New state for the store
+    STORE_SCREEN: 'storeScreen',
     PAUSED: 'paused',
     HOW_TO_PLAY: 'howToPlay',
     SETTINGS_SCREEN: 'settingsScreen',
@@ -23,13 +22,14 @@ const ENEMY_TYPE = {
 const PICKUP_TYPE = {
     BOMB: 'bomb',
     SHIELD: 'shield',
+    RAPID: 'rapid',
 };
 
 const PLAYER_SETTINGS = {
     RADIUS: 15,
     FRICTION: 0.88,
     TRAIL_LENGTH: 18,
-    INVULNERABLE_DURATION: 2000,
+    INVULNERABLE_DURATION: 2500,
     BASE_SPEED: 4.0,
     BASE_SHOOT_COOLDOWN: 140,
     BASE_BULLET_DAMAGE: 1,
@@ -38,17 +38,29 @@ const PLAYER_SETTINGS = {
     INITIAL_BOMBS: 1,
     BOMB_COOLDOWN: 500,
     BASE_BOMB_RADIUS: 250,
+    BOMB_INVULNERABLE_DURATION: 700,
     SHIELD_BASE_DURATION: 5000,
+    RAPID_FIRE_DURATION: 8000,
+    RAPID_FIRE_MULTIPLIER: 1.8,
     DRAW_GLOW_SCALE: 1.2,
     BOMB_PARTICLE_COUNT: 80,
+    STARTING_LIVES: 3,
     MAX_LIVES: 5,
     LIFE_COST: 750, // Cost for one life
+    RESPAWN_CLEAR_RADIUS: 190, // Enemies/bullets this close are cleared on respawn
 };
 
 const BULLET_SETTINGS = {
     RADIUS: 5,
     LIFESPAN_DECREMENT: 4,
     TRAIL_LENGTH: 7,
+};
+
+const ENEMY_BULLET_SETTINGS = {
+    RADIUS: 7,
+    SPEED: 3.1,
+    LIFESPAN: 7000,
+    TRAIL_LENGTH: 6,
 };
 
 const PARTICLE_SETTINGS = {
@@ -73,25 +85,53 @@ const ASTEROID_SETTINGS = {
     MAX_SPEED: 0.8,
     MAX_COUNT: 10,
     SPAWN_INTERVAL: 15000,
+    MIN_SPAWN_INTERVAL: 7000,
     POINTS_PER_HEALTH: 5,
-    // XP_PER_HEALTH: 2, // Phased out
-    CREDITS_PER_HEALTH: 0, // Credits granted per health point of asteroid
+    CREDITS_PER_HEALTH: 1,
     HIT_COLOR_DURATION: 80,
+    SPLIT_MIN_RADIUS: 24,
+    SPLIT_FACTOR: 0.62,
+    MAX_GENERATION: 2,
+    SAFE_SPAWN_DISTANCE: 190,
 };
 
 const GAME_SETTINGS = {
-    INITIAL_SPAWN_INTERVAL: 1900,
-    MIN_SPAWN_INTERVAL: 250,
-    DIFFICULTY_INCREASE_RATE: 10,
+    INITIAL_SPAWN_INTERVAL: 1300,
+    MIN_SPAWN_INTERVAL: 220,
+    DIFFICULTY_INCREASE_RATE: 12,
     MULTIPLIER_RESET_TIME: 2500,
-    MAX_ENEMIES: 100,
-    // INITIAL_XP_TO_NEXT_LEVEL: 150, // Phased out
-    // LEVEL_COST_MULTIPLIER: 1.3,    // Phased out
-    // XP_BAR_WIDTH: 250,             // Phased out
-    // XP_BAR_HEIGHT: 20,            // Phased out
-    BOSS_SPAWN_LEVEL: 5,
+    MAX_ENEMIES: 90,
     GRID_SIZE: 50,
     INITIAL_CREDITS: 0,
+    // Difficulty ramps with time survived.
+    DIFFICULTY_RAMP_PER_MINUTE: 0.28,
+    MAX_DIFFICULTY_MULTIPLIER: 2.8,
+    // Bosses are earned by scoring, not by the retired XP level system.
+    BOSS_FIRST_SCORE: 2000,
+    BOSS_SCORE_REWARD_GAP: 2600,
+    BOSS_WARNING_DURATION: 2000,
+    BOSS_MIN_INTERVAL: 45000, // no two bosses closer than this
+    BOSS_TIER_SCORE_GROWTH: 0.35,
+    MAX_PARTICLES: 900,
+    MAX_PICKUPS: 40,
+};
+
+const BOSS_SETTINGS = {
+    BASE_HEALTH: 120,
+    HEALTH_PER_TIER: 90,
+    BASE_RADIUS: 62,
+    RADIUS_PER_TIER: 3,
+    MAX_RADIUS: 92,
+    BASE_SPEED: 1.7,
+    SPEED_PER_TIER: 0.12,
+    MAX_SPEED: 3.0,
+    ENRAGE_THRESHOLD: 0.4,
+    BURST_COOLDOWN: 2600,
+    BURST_COOLDOWN_MIN: 1300,
+    BURST_COUNT: 10,
+    SUMMON_COOLDOWN: 6500,
+    SUMMON_COOLDOWN_MIN: 3800,
+    ENEMY_BULLET_SPEED_PER_TIER: 0.18,
 };
 
 const ENEMY_MERGE_SETTINGS = {
@@ -100,7 +140,6 @@ const ENEMY_MERGE_SETTINGS = {
     MERGE_HEALTH_BONUS_FACTOR: 1.2,
     MERGE_BASE_HEALTH_BONUS_FACTOR: 1.1,
     MERGE_SCORE_BONUS_BASE: 25,
-    // MERGE_XP_BONUS_BASE: 10, // Phased out
     MERGE_CREDITS_BONUS_BASE: 5,
     MERGE_SPEED_MULTIPLIER: 0.92,
     CHASER_MERGE_VERTEX_INCREMENT: 1,
@@ -115,3 +154,9 @@ const ENEMY_BASE_CREDITS = {
     SPLITTER: 8,
     BOSS_MEGA_CHASER: 100,
 };
+
+const ENEMY_HIT_FLASH_DURATION = 80;
+
+const CONTROL_HINT_DURATION = 9000;
+const JOYSTICK_RADIUS = 55;
+const JOYSTICK_DEADZONE = 10;
