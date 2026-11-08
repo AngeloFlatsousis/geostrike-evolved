@@ -13,6 +13,7 @@ class Enemy {
         }
 
         if (enemyData) {
+            this.type = enemyData.type;
             this.pos = enemyData.pos.copy();
             this.vel = enemyData.vel ? enemyData.vel.copy() : p5.Vector.random2D();
             this.radius = enemyData.radius;
@@ -20,38 +21,40 @@ class Enemy {
             this.health = enemyData.health;
             this.baseHealth = enemyData.baseHealth || this.health;
             this.scoreValue = enemyData.scoreValue || 0;
-            // this.xpValue = enemyData.xpValue || 0; // Phased out
-            this.creditsValue = (typeof enemyData.creditsValue === 'number') ? enemyData.creditsValue : (ENEMY_BASE_CREDITS[this.type] || 0); // Get base credits
-            this.type = enemyData.type;
+            this.creditsValue = (typeof enemyData.creditsValue === 'number')
+                ? enemyData.creditsValue
+                : (ENEMY_BASE_CREDITS[this.type] || 0);
             this.baseColor = enemyData.baseColor || color(255, 0, 100);
             this.vertices = enemyData.vertices || floor(random(4, 9));
             this.pickupDropChance = enemyData.pickupDropChance !== undefined ? enemyData.pickupDropChance : 0.05;
             this.mergeLevel = enemyData.mergeLevel || 0;
         } else {
+            this.type = initialType;
             this.pos = createVector(initialX, initialY);
             this.vel = p5.Vector.random2D();
             this.radius = random(12, 28);
             this.maxSpeed = random(1.8, 3.8);
             this.health = floor(map(this.radius, 12, 28, 1, 5));
             this.baseHealth = this.health;
-            this.type = initialType;
             this.scoreValue = 0;
-            // this.xpValue = 0; // Phased out
-            this.creditsValue = (ENEMY_BASE_CREDITS[this.type] || 0); // Get base credits
+            this.creditsValue = (ENEMY_BASE_CREDITS[this.type] || 0);
             this.baseColor = color(255, 0, 100);
             this.vertices = floor(random(4, 9));
             this.pickupDropChance = 0.05;
             this.mergeLevel = 0;
         }
         this.currentColor = this.baseColor;
-        this.hitFlashTime = 0;
-        this.hitFlashDuration = 80;
+        this.hitFlashTime = -Infinity;
+        this.hitFlashDuration = ENEMY_HIT_FLASH_DURATION;
         this.isBoss = false;
+        this.dead = false;
+        this.bobPhase = random(TWO_PI);
     }
 
     update() {
+        if (this.dead || !player) return;
         this.applySteering(player.pos);
-        this.pos.add(this.vel);
+        this.pos.add(p5.Vector.mult(this.vel, dtScale));
         this.updateColor();
     }
 
@@ -59,7 +62,7 @@ class Enemy {
         let desired = p5.Vector.sub(targetPos, this.pos);
         desired.setMag(this.maxSpeed);
         let steer = p5.Vector.sub(desired, this.vel);
-        steer.limit(0.15);
+        steer.limit(0.15 * dtScale);
         this.vel.add(steer);
         this.vel.limit(this.maxSpeed);
     }
@@ -67,15 +70,16 @@ class Enemy {
     updateColor() {
         if (millis() < this.hitFlashTime + this.hitFlashDuration) {
             let flashAmount = map(millis(), this.hitFlashTime, this.hitFlashTime + this.hitFlashDuration, 1, 0);
-            this.currentColor = lerpColor(this.baseColor, color(255), flashAmount * 0.8);
+            this.currentColor = lerpColor(this.baseColor, color(255), constrain(flashAmount, 0, 1) * 0.8);
         } else {
-            let healthRatio = constrain(this.health / this.baseHealth, 0, 1);
+            let healthRatio = constrain(this.health / max(1, this.baseHealth), 0, 1);
             let darkerBase = color(red(this.baseColor) * 0.5, green(this.baseColor) * 0.5, blue(this.baseColor) * 0.5);
             this.currentColor = lerpColor(darkerBase, this.baseColor, healthRatio);
         }
     }
 
     takeDamage(amount) {
+        if (this.dead) return false;
         this.health -= amount;
         this.hitFlashTime = millis();
         if (this.health <= 0) {
@@ -86,20 +90,34 @@ class Enemy {
     }
 
     die() {
+        if (this.dead) return; // Guard against double-kills in the same frame
+        this.dead = true;
+
         createExplosion(this.pos.x, this.pos.y, floor(this.radius * 2.5), this.baseColor, map(this.radius, 10, 30, 0.8, 1.8));
         score += this.scoreValue * scoreMultiplier;
-        playerCredits += floor((this.creditsValue + (this.mergeLevel * ENEMY_MERGE_SETTINGS.MERGE_CREDITS_BONUS_BASE)) * scoreMultiplier); // Add credits, boosted by multiplier and merge level
+        let credits = floor((this.creditsValue + (this.mergeLevel * ENEMY_MERGE_SETTINGS.MERGE_CREDITS_BONUS_BASE)) * scoreMultiplier);
+        playerCredits += credits;
+        runCreditsEarned += max(0, credits);
+        runKills++;
 
         updateMultiplier();
         screenShakeMagnitude = max(screenShakeMagnitude, map(this.radius, 10, ENEMY_MERGE_SETTINGS.MAX_MERGED_RADIUS, 3, 12));
+        playSfx('explode');
 
-        if (random() < this.pickupDropChance + (this.isBoss ? 0.5 : 0) ) {
+        if (random() < this.pickupDropChance + (this.isBoss ? 0.5 : 0)) {
             let dropType = PICKUP_TYPE.BOMB;
-            if(this.isBoss || random() < 0.2) {
+            let roll = random();
+            if (this.isBoss) {
                 dropType = PICKUP_TYPE.SHIELD;
+            } else if (roll < 0.2) {
+                dropType = PICKUP_TYPE.SHIELD;
+            } else if (roll < 0.34) {
+                dropType = PICKUP_TYPE.RAPID;
             }
             spawnPickup(this.pos.x, this.pos.y, dropType);
         }
+
+        this.onDeath();
 
         let index = enemies.indexOf(this);
         if (index > -1) {
@@ -107,10 +125,10 @@ class Enemy {
         }
 
         spawnInterval = max(GAME_SETTINGS.MIN_SPAWN_INTERVAL, spawnInterval - GAME_SETTINGS.DIFFICULTY_INCREASE_RATE);
-        if(this.isBoss) {
-            bossSpawnedThisGame = false;
-        }
     }
+
+    // Hook for subclasses (splitters spawn children, bosses update progression)
+    onDeath() {}
 
     draw() {
         push();
@@ -132,6 +150,17 @@ class Enemy {
         strokeWeight(strokeWeightMod);
         this.drawShape();
         pop();
+
+        // Merged enemies get a visible level marker.
+        if (this.mergeLevel > 0) {
+            push();
+            noStroke();
+            fill(255, 255, 255, 170);
+            for (let i = 0; i < this.mergeLevel; i++) {
+                ellipse(this.pos.x - (this.mergeLevel - 1) * 4 + i * 8, this.pos.y - this.radius - 10, 4);
+            }
+            pop();
+        }
     }
 
     drawShape() {
@@ -144,6 +173,7 @@ class Enemy {
     }
 
     isOffscreen(marginFactor = 3) {
+        if (this.isBoss) return false; // Bosses always come back
         let margin = this.radius * marginFactor;
         return (
             this.pos.x < -margin ||

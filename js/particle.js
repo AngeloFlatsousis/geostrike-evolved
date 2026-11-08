@@ -1,18 +1,19 @@
 class Particle {
     constructor(x, y, pColor, sizeMultiplier = 1) {
         this.pos = createVector(x, y);
-        this.vel = p5.Vector.random2D().mult(random(0.5, 6 * sizeMultiplier)); // Random initial velocity
+        this.vel = p5.Vector.random2D().mult(random(0.5, 6) * sizeMultiplier); // Random initial velocity
         this.lifespan = 255; // Initial lifespan, fades over time
         this.radius = random(1.5, 4.5) * sizeMultiplier;
         this.baseRadius = this.radius; // Store initial radius for scaling
         this.color = pColor || color(255, random(100, 200), 0); // Default orange-ish if no color provided
         this.friction = random(PARTICLE_SETTINGS.FRICTION_MIN, PARTICLE_SETTINGS.FRICTION_MAX);
+        this.sizeMultiplier = sizeMultiplier;
     }
 
     update() {
-        this.pos.add(this.vel);
-        this.vel.mult(this.friction); // Apply friction to slow down
-        this.lifespan -= random(PARTICLE_SETTINGS.LIFESPAN_DECREMENT_MIN, PARTICLE_SETTINGS.LIFESPAN_DECREMENT_MAX);
+        this.pos.add(p5.Vector.mult(this.vel, dtScale));
+        this.vel.mult(pow(this.friction, dtScale));
+        this.lifespan -= random(PARTICLE_SETTINGS.LIFESPAN_DECREMENT_MIN, PARTICLE_SETTINGS.LIFESPAN_DECREMENT_MAX) * dtScale;
         this.radius = this.baseRadius * (this.lifespan / 255); // Shrink as lifespan decreases
     }
 
